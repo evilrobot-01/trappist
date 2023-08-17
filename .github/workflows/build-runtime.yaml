@@ -1,11 +1,15 @@
 name: Build Deterministic Runtimes
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
 
 jobs:
   srtool:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     strategy:
       matrix:
         chain: ["trappist", "stout"]
@@ -22,10 +26,25 @@ jobs:
           echo '${{ steps.srtool_build.outputs.json }}' | jq . > ${{ matrix.chain }}-srtool-digest.json
           cat ${{ matrix.chain }}-srtool-digest.json
           cp `dirname ${{ steps.srtool_build.outputs.wasm }}`/*.wasm ./
+      # Manual trigger
       - name: Archive Runtime
+        if: ${{ github.event_name != 'release' }}
         uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.chain }}-runtime-${{ github.sha }}
           path: |
             ${{ matrix.chain }}*.wasm
+            ${{ matrix.chain }}-srtool-digest.json
+      # Release published
+      - name: Append Info to Release Notes
+        run: |
+          printf "## Runtime: \`${{ matrix.chain }}\`\n\`\`\`\n%s\n\`\`\`\n" "$(subwasm info ${{ matrix.chain }}-runtime.compact.compressed.wasm)" > release.md
+      - name: Add Artifacts to Release
+        if: ${{ github.event_name == 'release' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: release.md
+          append_body: true
+          files: |
+            ${{ matrix.chain }}-runtime.compact.compressed.wasm
             ${{ matrix.chain }}-srtool-digest.json
