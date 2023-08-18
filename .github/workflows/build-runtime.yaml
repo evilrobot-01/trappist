@@ -14,19 +14,32 @@ jobs:
       matrix:
         chain: ["trappist", "stout"]
     steps:
-      - uses: actions/checkout@v3
-      - name: Srtool build
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Cache target dir
+        uses: actions/cache@v3
+        with:
+          path: "${{ github.workspace }}/runtime/${{ matrix.runtime }}/target"
+          key: srtool-target-${{ matrix.runtime }}-${{ github.sha }}
+          restore-keys: |
+            srtool-target-${{ matrix.runtime }}-
+            srtool-target-
+
+      - name: Build ${{ matrix.runtime }} runtime
         id: srtool_build
         uses: chevdor/srtool-actions@v0.7.0
         with:
           chain: ${{ matrix.chain }}
+
       - name: Summary
         run: |
           echo Summary:
           echo '${{ steps.srtool_build.outputs.json }}' | jq . > ${{ matrix.chain }}-srtool-digest.json
           cat ${{ matrix.chain }}-srtool-digest.json
           cp `dirname ${{ steps.srtool_build.outputs.wasm }}`/*.wasm ./
-      # Manual trigger
+
+      # Manual trigger: add artifacts to run
       - name: Archive Runtime
         if: ${{ github.event_name != 'release' }}
         uses: actions/upload-artifact@v3
@@ -35,11 +48,17 @@ jobs:
           path: |
             ${{ matrix.chain }}*.wasm
             ${{ matrix.chain }}-srtool-digest.json
-      # Release published
-      - name: Append Info to Release Notes
+
+      # Release published: add artifacts to release
+      - name: Generate info to append to release notes
         run: |
-          printf "## Runtime: \`${{ matrix.chain }}\`\n\`\`\`\n%s\n\`\`\`\n" "$(subwasm info ${{ matrix.chain }}-runtime.compact.compressed.wasm)" > release.md
-      - name: Add Artifacts to Release
+          echo 
+            "\n## Runtime: `${{ matrix.chain }}`\n"
+            "```\n"
+            "🏋️ Runtime Size:           $(jq .runtimes.compressed.subwasm.size ${{ matrix.chain }}-srtool-digest.json) bytes"
+            "```\n" > release.md
+          echo release.md
+      - name: Add artifacts to release
         if: ${{ github.event_name == 'release' }}
         uses: softprops/action-gh-release@v1
         with:
@@ -48,3 +67,12 @@ jobs:
           files: |
             ${{ matrix.chain }}-runtime.compact.compressed.wasm
             ${{ matrix.chain }}-srtool-digest.json
+
+
+#            "🔥 Core Version:           kusama-9430 (parity-kusama-0.tx23.au2)
+#            "🗜 Compressed:             Yes: 79.34%
+#            "🎁 Metadata version:       V14
+#            "🗳️ system.setCode hash:    0x2802de8755ceb5138f229dd46fbd8165422bae31b000d0f0a06931d383b203f5
+#            "🗳️ authorizeUpgrade hash:  0x168a65b168221d7ff899b24b79304286b1f768b89c7ace07ec85405b1d55c6e5
+#            "🗳️ Blake2-256 hash:        0x67999f8cc63634bee01b20e0266c5fc28b79647310024cc534bdc3318a76e17a
+#            "📦 IPFS:                   QmQPJEeS3BoWCvzX66AL5vKinaXsKd2hRAtyejzE7KH2XX
